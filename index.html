@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tiny Farm Mobile</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800&display=swap');
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { font-family: 'Kanit', sans-serif; background: #f1f5f9; margin: 0; padding: 10px; touch-action: manipulation; }
+        .plot { aspect-ratio: 1/1; border-radius: 1.25rem; background: #ffffff; border: 2px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); position: relative; }
+        .plot:active { transform: scale(0.95); }
+        .plot.ready { border-color: #fbbf24; background: #fffbeb; border-width: 3px; }
+        .plot.growing { border-color: #3b82f6; background: #eff6ff; }
+        .timer-text { font-size: 10px; font-weight: 800; color: #2563eb; background: white; padding: 1px 5px; border-radius: 6px; margin-top: 4px; border: 1px solid #dbeafe; }
+        .tab-btn { flex: 1; padding: 12px 4px; border-radius: 12px; font-weight: 800; font-size: 0.8rem; color: #64748b; transition: all 0.2s; }
+        .tab-btn.active { background: white; box-shadow: 0 4px 10px rgba(0,0,0,0.08); color: #2563eb; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div class="max-w-md mx-auto space-y-4">
+        <!-- Stats -->
+        <div class="flex justify-between items-center bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100">
+            <div class="flex items-center gap-3">
+                <div class="bg-yellow-400 w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xl">฿</div>
+                <div><p id="money-txt" class="text-xl font-extrabold text-slate-800">0</p><p class="text-[9px] text-slate-400 font-bold uppercase">เงินของฉัน</p></div>
+            </div>
+            <div id="dev-trigger" class="text-right">
+                <div id="dev-tag" class="hidden text-[7px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-black mb-1 uppercase text-center">DEV MODE</div>
+                <p id="level-txt" class="text-2xl font-black text-blue-600">1</p><p class="text-[9px] text-slate-400 font-bold uppercase">เลเวล</p>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="flex bg-slate-200/50 p-1 rounded-2xl gap-1">
+            <button onclick="switchTab('farm')" id="tab-farm" class="tab-btn active">🚜 ฟาร์ม</button>
+            <button onclick="switchTab('seed')" id="tab-seed" class="tab-btn">🏪 เมล็ด</button>
+            <button onclick="switchTab('tool')" id="tab-tool" class="tab-btn">🛠 อุปกรณ์</button>
+            <button onclick="switchTab('market')" id="tab-market" class="tab-btn">💰 ขาย</button>
+        </div>
+
+        <!-- Farm View -->
+        <div id="view-farm" class="space-y-4">
+            <div id="seed-selector" class="flex gap-2 overflow-x-auto no-scrollbar py-1"></div>
+            <div id="grid" class="grid grid-cols-3 gap-3 p-4 bg-white rounded-[2rem] border border-slate-100 shadow-sm"></div>
+            <button id="expand-btn" class="w-full bg-slate-900 text-white py-5 rounded-2xl font-bold flex justify-between px-6 active:scale-95">
+                <span>ขยายพื้นที่ (+1)</span><span id="expand-cost" class="text-yellow-400">฿1,000</span>
+            </button>
+        </div>
+
+        <div id="view-seed" class="hidden space-y-3"></div>
+        <div id="view-tool" class="hidden space-y-3"></div>
+        <div id="view-market" class="hidden space-y-3"></div>
+
+        <div class="pt-6 text-center">
+            <a href="https://discord.gg/yourlink" target="_blank" class="text-[#5865F2] text-xs font-bold">พูดคุยใน Discord 👋</a>
+        </div>
+    </div>
+
+    <div id="dev-modal" class="fixed inset-0 bg-slate-900/80 hidden items-center justify-center z-[100] p-6 backdrop-blur-md">
+        <div class="bg-white w-full max-w-xs rounded-[2rem] p-6 shadow-2xl">
+            <h3 class="text-lg font-black mb-4 text-center">Admin Access</h3>
+            <input type="password" id="dev-input" class="w-full bg-slate-100 border-none rounded-xl p-4 mb-4 text-center outline-none" placeholder="ใส่รหัส">
+            <div class="flex gap-3">
+                <button onclick="closeDevModal()" class="flex-1 font-bold text-slate-400">ปิด</button>
+                <button onclick="checkDevCode()" class="flex-1 bg-blue-600 text-white rounded-xl py-3 font-bold">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-5 py-3 rounded-xl text-[10px] font-bold opacity-0 transition-all z-[200] pointer-events-none shadow-xl text-center"></div>
+
+    <script>
+        const SEEDS = [
+            { id: 'carrot', name: 'แครอท', emoji: '🥕', cost: 20, rev: 70, time: 5000, lv: 1 },
+            { id: 'corn', name: 'ข้าวโพด', emoji: '🌽', cost: 150, rev: 550, time: 15000, lv: 2 },
+            { id: 'tomato', name: 'มะเขือเทศ', emoji: '🍅', cost: 600, rev: 2400, time: 30000, lv: 4 },
+            { id: 'pineapple', name: 'สับปะรด', emoji: '🍍', cost: 2500, rev: 11000, time: 60000, lv: 6 }
+        ];
+        const TOOLS = [
+            { id: 'fert', name: 'ปุ๋ยเร่งโต', emoji: '🧪', desc: 'ผักโตไวขึ้น 30%', cost: 3500, type: 'speed', val: 0.7 },
+            { id: 'can', name: 'บัวทองคำ', emoji: '🚿', desc: 'ราคาขายเพิ่ม 40%', cost: 8000, type: 'money', val: 1.4 }
+        ];
+        let state = JSON.parse(localStorage.getItem('tiny_farm_gh')) || {
+            money: 250, level: 1, exp: 0, selected: 'carrot', plotCount: 6, seedStock: { carrot: 5 },
+            harvest: {}, upgrades: [], plots: [], isDev: false
+        };
+        if (state.plots.length === 0) state.plots = Array(state.plotCount).fill(null).map(() => ({ st: 'empty', sid: null, start: null }));
+        
+        function showToast(m) { const t = document.getElementById('toast'); t.innerText = m; t.style.opacity = '1'; setTimeout(() => t.style.opacity = '0', 2000); }
+        let devClicks = 0;
+        document.getElementById('dev-trigger').onclick = () => { devClicks++; if (devClicks >= 5) { devClicks = 0; document.getElementById('dev-modal').style.display = 'flex'; } };
+        function closeDevModal() { document.getElementById('dev-modal').style.display = 'none'; }
+        function checkDevCode() { if (document.getElementById('dev-input').value === "dev4000") { state.isDev = true; state.money += 4000; updateUI(); closeDevModal(); showToast("Dev Mode Active!"); } else { showToast("Wrong Code"); closeDevModal(); } }
+        
+        function switchTab(t) {
+            ['farm', 'seed', 'tool', 'market'].forEach(x => { document.getElementById('view-' + x).classList.add('hidden'); document.getElementById('tab-' + x).classList.remove('active'); });
+            document.getElementById('view-' + t).classList.remove('hidden'); document.getElementById('tab-' + t).classList.add('active');
+            if(t === 'seed') renderSeedShop(); if(t === 'tool') renderToolShop(); if(t === 'market') renderMarket();
+        }
+        function updateUI() {
+            document.getElementById('money-txt').innerText = state.money.toLocaleString(); document.getElementById('level-txt').innerText = state.level;
+            if(state.isDev) document.getElementById('dev-tag').classList.remove('hidden');
+            const cost = 1000 + ((state.plotCount - 6) * 2000); document.getElementById('expand-cost').innerText = `฿${cost.toLocaleString()}`;
+            renderSeedSelector(); renderGrid(); localStorage.setItem('tiny_farm_gh', JSON.stringify(state));
+        }
+        function renderSeedSelector() {
+            const cont = document.getElementById('seed-selector'); cont.innerHTML = '';
+            SEEDS.forEach(s => {
+                const stock = state.seedStock[s.id] || 0; if(stock <= 0 && state.selected !== s.id) return;
+                const act = state.selected === s.id;
+                const btn = document.createElement('div'); btn.className = `flex-shrink-0 min-w-[80px] p-3 rounded-2xl border-2 transition-all flex flex-col items-center ${act ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-100'}`;
+                btn.innerHTML = `<span class="text-xl">${s.emoji}</span><span class="text-[9px] font-black">${s.name}</span><span class="text-[8px] opacity-70">x${stock}</span>`;
+                btn.onclick = () => { state.selected = s.id; updateUI(); }; cont.appendChild(btn);
+            });
+        }
+        function renderGrid() {
+            const grid = document.getElementById('grid'); grid.innerHTML = '';
+            state.plots.forEach((p, i) => {
+                const d = document.createElement('div'); d.className = `plot ${p.st}`;
+                if (p.st === 'empty') d.innerHTML = '<span class="opacity-10 text-[10px] font-black uppercase">Soil</span>';
+                else if (p.st === 'growing') d.innerHTML = `<span class="text-xl grayscale">🌿</span><div class="timer-text" id="t-${i}">--:--</div>`;
+                else if (p.st === 'ready') d.innerHTML = `<span class="text-3xl animate-bounce">${SEEDS.find(x => x.id === p.sid).emoji}</span>`;
+                d.onclick = () => handlePlot(i); grid.appendChild(d);
+            });
+        }
+        function handlePlot(i) {
+            const p = state.plots[i];
+            if (p.st === 'empty') { if ((state.seedStock[state.selected] || 0) > 0) { state.seedStock[state.selected]--; p.st = 'growing'; p.sid = state.selected; p.start = Date.now(); updateUI(); } else showToast("No seeds!"); }
+            else if (p.st === 'ready') { state.harvest[p.sid] = (state.harvest[p.sid] || 0) + 1; p.st = 'empty'; p.sid = null; state.exp += 50; if(state.exp >= state.level * 400) { state.level++; state.exp = 0; showToast("LVL UP!"); } updateUI(); }
+        }
+        function renderSeedShop() {
+            const v = document.getElementById('view-seed'); v.innerHTML = '<h2 class="font-black text-slate-700 px-1 text-sm uppercase mb-2">Seed Shop</h2>';
+            SEEDS.forEach(s => {
+                const lock = state.level < s.lv; const el = document.createElement('div'); el.className = 'bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100';
+                el.innerHTML = `<div class="flex gap-3 items-center"><span class="text-3xl">${lock ? '🔒' : s.emoji}</span><div><p class="font-bold text-sm">${s.name}</p><p class="text-[9px] text-blue-500 font-bold uppercase">LV ${s.lv}</p></div></div><button ${lock ? 'disabled' : ''} onclick="buySeed('${s.id}')" class="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold disabled:bg-slate-200">฿${s.cost}</button>`;
+                v.appendChild(el);
+            });
+        }
+        window.buySeed = (id) => { const s = SEEDS.find(x => x.id === id); if(state.money >= s.cost) { state.money -= s.cost; state.seedStock[id] = (state.seedStock[id] || 0) + 1; updateUI(); renderSeedShop(); } else showToast("No money"); };
+        function renderToolShop() {
+            const v = document.getElementById('view-tool'); v.innerHTML = '<h2 class="font-black text-slate-700 px-1 text-sm uppercase mb-2">Upgrades</h2>';
+            TOOLS.forEach(t => {
+                const owned = state.upgrades.includes(t.id); const el = document.createElement('div'); el.className = 'bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100';
+                el.innerHTML = `<div class="flex gap-3 items-center"><span class="text-2xl">${t.emoji}</span><div><p class="font-bold text-sm">${t.name}</p><p class="text-[9px] text-slate-400 font-bold">${t.desc}</p></div></div>${owned ? '<span class="text-[10px] font-black text-emerald-500 uppercase">Owned</span>' : `<button onclick="buyTool('${t.id}')" class="bg-slate-800 text-white px-5 py-2 rounded-xl text-xs font-bold">฿${t.cost}</button>`}`;
+                v.appendChild(el);
+            });
+        }
+        window.buyTool = (id) => { const t = TOOLS.find(x => x.id === id); if(state.money >= t.cost) { state.money -= t.cost; state.upgrades.push(id); updateUI(); renderToolShop(); showToast("Upgrade Active!"); } else showToast("No money"); };
+        function renderMarket() {
+            const v = document.getElementById('view-market'); v.innerHTML = '<h2 class="font-black text-slate-700 px-1 text-sm uppercase mb-2">Market</h2>';
+            let empty = true;
+            Object.keys(state.harvest).forEach(id => {
+                if(state.harvest[id] <= 0) return; empty = false;
+                const s = SEEDS.find(x => x.id === id); const price = Math.floor(s.rev * (state.upgrades.includes('can') ? 1.4 : 1));
+                const el = document.createElement('div'); el.className = 'bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100';
+                el.innerHTML = `<div class="flex gap-3 items-center"><span class="text-3xl">${s.emoji}</span><div><p class="font-bold text-sm">${s.name}</p><p class="text-[9px] text-slate-400 font-bold uppercase">Stock: ${state.harvest[id]}</p></div></div><button onclick="sell('${id}')" class="bg-emerald-600 text-white px-5 py-2 rounded-xl text-xs font-bold">Sell (฿${price})</button>`;
+                v.appendChild(el);
+            });
+            if(empty) v.innerHTML += '<p class="text-center py-10 text-slate-400 text-xs font-bold italic">Empty Market</p>';
+        }
+        window.sell = (id) => { const s = SEEDS.find(x => x.id === id); state.money += Math.floor(s.rev * (state.upgrades.includes('can') ? 1.4 : 1)); state.harvest[id]--; renderMarket(); updateUI(); };
+        document.getElementById('expand-btn').onclick = () => { const cost = 1000 + ((state.plotCount - 6) * 2000); if(state.money >= cost) { state.money -= cost; state.plotCount++; state.plots.push({ st: 'empty', sid: null, start: null }); updateUI(); } else showToast("No money"); };
+        setInterval(() => {
+            const now = Date.now(); let refresh = false;
+            state.plots.forEach((p, i) => {
+                if (p.st === 'growing') {
+                    const s = SEEDS.find(x => x.id === p.sid); const dur = s.time * (state.upgrades.includes('fert') ? 0.7 : 1); const remain = Math.max(0, dur - (now - p.start));
+                    const el = document.getElementById(`t-${i}`); if(el) el.innerText = `${Math.floor(remain/60000)}:${(Math.ceil(remain/1000)%60).toString().padStart(2, '0')}`;
+                    if(remain <= 0) { p.st = 'ready'; refresh = true; }
+                }
+            });
+            if(refresh) renderGrid();
+        }, 500);
+        window.onload = updateUI;
+    </script>
+</body>
+</html>
+
+                                                                                           
